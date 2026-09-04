@@ -48,7 +48,7 @@ def main():
         use_verso=args.use_verso,
         augment=True,
     )
-    loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=2, drop_last=True)
+    loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True)
     print(f"Loaded {len(dataset)} training image pairs.")
 
     in_ch = 2 if args.use_verso else 1

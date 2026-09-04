@@ -34,7 +34,16 @@ class ManuscriptDataset(Dataset):
         patch_size: int = 64,
         use_verso: bool = False,
         augment: bool = True,
+        patches_per_image: int = 200,
     ):
+        """
+        patches_per_image: how many random crops to draw from each source
+            image per epoch. With only a handful of source pages (e.g. 5),
+            this is what lets you get a usable amount of training data --
+            without it, one epoch would be just 5 patches total, which is
+            not enough to train anything, and can silently produce zero
+            batches if batch_size > number of source images.
+        """
         self.root = Path(root_dir)
         self.recto_dir = self.root / "recto"
         self.clean_dir = self.root / "clean"
@@ -42,6 +51,7 @@ class ManuscriptDataset(Dataset):
         self.use_verso = use_verso
         self.patch_size = patch_size
         self.augment = augment
+        self.patches_per_image = patches_per_image
 
         self.filenames = sorted(
             f.name for f in self.recto_dir.iterdir()
@@ -58,15 +68,21 @@ class ManuscriptDataset(Dataset):
                 f"in clean/."
             )
 
+        print(
+            f"Found {len(self.filenames)} source image pairs -> "
+            f"{len(self.filenames) * self.patches_per_image} patches per epoch "
+            f"({self.patches_per_image} patches/image)."
+        )
+
     def __len__(self):
-        return len(self.filenames)
+        return len(self.filenames) * self.patches_per_image
 
     def _load_gray(self, path):
         img = Image.open(path).convert("L")
         return np.asarray(img, dtype=np.float32) / 255.0
 
     def __getitem__(self, idx):
-        fname = self.filenames[idx]
+        fname = self.filenames[idx % len(self.filenames)]
         recto = self._load_gray(self.recto_dir / fname)
         clean = self._load_gray(self.clean_dir / fname)
 

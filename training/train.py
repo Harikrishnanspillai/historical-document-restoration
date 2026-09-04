@@ -332,6 +332,9 @@ def train():
         # Validation
         # ====================================================
 
+        if DEVICE.type == "cuda":
+            torch.cuda.empty_cache()
+
         model.eval()
 
         validation_loss = 0.0

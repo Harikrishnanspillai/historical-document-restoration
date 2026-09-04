@@ -77,7 +77,7 @@ class HistoricalDocumentDataset(Dataset):
 
         # Training gets multiple random patches per document.
         # Validation/test will eventually use full-image tiled inference.
-        if split == "train":
+        if split in ("train", "val"):
             self.total_samples = (
                 len(self.pairs) * patches_per_image
             )
@@ -88,7 +88,7 @@ class HistoricalDocumentDataset(Dataset):
             f"[{split.upper()}] Loaded {len(self.pairs)} image pairs"
         )
 
-        if split == "train":
+        if split in ("train", "val"):
             print(
                 f"[{split.upper()}] "
                 f"{patches_per_image} patches per image"
@@ -134,7 +134,7 @@ class HistoricalDocumentDataset(Dataset):
         # TRAINING
         # ----------------------------------------------------
 
-        if self.split == "train":
+        if self.split in ("train", "val"):
 
             # Map sample index to an actual document.
             image_index = index // self.patches_per_image

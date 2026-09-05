@@ -1,8 +1,8 @@
-venv/
+.venv/
 __pycache__/
 *.pyc
 .vscode/
 outputs/
-data/
+dataset/
 checkpoints/
 *.pth

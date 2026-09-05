@@ -14,7 +14,6 @@ TEST_DIR = Path("dataset/test")
 DEGRADED_DIR = TEST_DIR / "degraded"
 GT_DIR = TEST_DIR / "gt"
 
-# This directory will eventually contain SwinIR outputs.
 RESTORED_DIR = Path("outputs/restored")
 
 
@@ -49,6 +48,10 @@ def evaluate():
     print("Historical Document Restoration Evaluation")
     print("=" * 70)
 
+    # --------------------------------------------------------
+    # Check directories
+    # --------------------------------------------------------
+
     if not DEGRADED_DIR.exists():
         raise FileNotFoundError(
             f"Degraded test directory not found: {DEGRADED_DIR}"
@@ -60,6 +63,7 @@ def evaluate():
         )
 
     if not RESTORED_DIR.exists():
+
         print()
         print(
             f"Restored image directory does not exist yet:"
@@ -67,10 +71,14 @@ def evaluate():
         )
         print()
         print(
-            "This is expected until the SwinIR inference step "
-            "has been implemented."
+            "Run the SwinIR inference step first."
         )
+
         return
+
+    # --------------------------------------------------------
+    # Find test images
+    # --------------------------------------------------------
 
     degraded_files = sorted(
         DEGRADED_DIR.glob("*.tif")
@@ -84,8 +92,14 @@ def evaluate():
     results = []
 
     print()
-    print(f"Test images found: {len(degraded_files)}")
+    print(
+        f"Test images found: {len(degraded_files)}"
+    )
     print()
+
+    # ========================================================
+    # Evaluate each image
+    # ========================================================
 
     for degraded_path in degraded_files:
 
@@ -100,7 +114,7 @@ def evaluate():
         )
 
         restored_path = RESTORED_DIR / (
-            image_name + ".png"
+            image_name + "_restored.tif"
         )
 
         # ----------------------------------------------------
@@ -164,7 +178,7 @@ def evaluate():
             )
 
         # ----------------------------------------------------
-        # Calculate metrics
+        # Calculate all metrics
         # ----------------------------------------------------
 
         degraded_metrics = calculate_metrics(
@@ -175,6 +189,15 @@ def evaluate():
         restored_metrics = calculate_metrics(
             restored,
             gt
+        )
+
+        # ----------------------------------------------------
+        # Calculate improvements
+        # ----------------------------------------------------
+
+        mse_change = (
+            restored_metrics["mse"]
+            - degraded_metrics["mse"]
         )
 
         psnr_improvement = (
@@ -192,22 +215,32 @@ def evaluate():
         # ----------------------------------------------------
 
         results.append({
+
             "name": image_name,
+
+            "degraded_mse":
+                degraded_metrics["mse"],
+
+            "restored_mse":
+                restored_metrics["mse"],
+
+            "mse_change":
+                mse_change,
 
             "degraded_psnr":
                 degraded_metrics["psnr"],
 
-            "degraded_ssim":
-                degraded_metrics["ssim"],
-
             "restored_psnr":
                 restored_metrics["psnr"],
 
-            "restored_ssim":
-                restored_metrics["ssim"],
-
             "psnr_improvement":
                 psnr_improvement,
+
+            "degraded_ssim":
+                degraded_metrics["ssim"],
+
+            "restored_ssim":
+                restored_metrics["ssim"],
 
             "ssim_improvement":
                 ssim_improvement
@@ -219,6 +252,9 @@ def evaluate():
 
         print(
             f"{image_name:<30} "
+            f"MSE: "
+            f"{degraded_metrics['mse']:.6f} → "
+            f"{restored_metrics['mse']:.6f}   "
             f"PSNR: "
             f"{degraded_metrics['psnr']:.2f} → "
             f"{restored_metrics['psnr']:.2f} dB   "
@@ -237,6 +273,24 @@ def evaluate():
         print("No images were evaluated.")
         return
 
+    # --------------------------------------------------------
+    # Average MSE
+    # --------------------------------------------------------
+
+    avg_degraded_mse = np.mean([
+        r["degraded_mse"]
+        for r in results
+    ])
+
+    avg_restored_mse = np.mean([
+        r["restored_mse"]
+        for r in results
+    ])
+
+    # --------------------------------------------------------
+    # Average PSNR
+    # --------------------------------------------------------
+
     avg_degraded_psnr = np.mean([
         r["degraded_psnr"]
         for r in results
@@ -246,6 +300,10 @@ def evaluate():
         r["restored_psnr"]
         for r in results
     ])
+
+    # --------------------------------------------------------
+    # Average SSIM
+    # --------------------------------------------------------
 
     avg_degraded_ssim = np.mean([
         r["degraded_ssim"]
@@ -257,11 +315,36 @@ def evaluate():
         for r in results
     ])
 
+    # ========================================================
+    # Print average results
+    # ========================================================
+
     print()
     print("=" * 70)
     print("AVERAGE RESULTS")
     print("=" * 70)
 
+    # MSE
+
+    print()
+    print(
+        f"Degraded MSE  : "
+        f"{avg_degraded_mse:.6f}"
+    )
+
+    print(
+        f"Restored MSE  : "
+        f"{avg_restored_mse:.6f}"
+    )
+
+    print(
+        f"MSE change    : "
+        f"{avg_restored_mse - avg_degraded_mse:+.6f}"
+    )
+
+    # PSNR
+
+    print()
     print(
         f"Degraded PSNR : "
         f"{avg_degraded_psnr:.2f} dB"
@@ -277,8 +360,9 @@ def evaluate():
         f"{avg_restored_psnr - avg_degraded_psnr:+.2f} dB"
     )
 
-    print()
+    # SSIM
 
+    print()
     print(
         f"Degraded SSIM : "
         f"{avg_degraded_ssim:.4f}"

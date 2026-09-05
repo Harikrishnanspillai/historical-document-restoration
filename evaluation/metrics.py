@@ -3,6 +3,16 @@ from skimage.metrics import peak_signal_noise_ratio
 from skimage.metrics import structural_similarity
 
 
+def calculate_mse(predicted, target):
+    """
+    Mean Squared Error.
+    Lower is better.
+    """
+    predicted = predicted.astype(np.float32)
+    target = target.astype(np.float32)
+
+    return np.mean((predicted - target) ** 2)
+
 def calculate_psnr(predicted, target):
     """
     Calculate PSNR between two grayscale images.
@@ -56,10 +66,12 @@ def calculate_metrics(predicted, target):
     Calculate all currently supported image-quality metrics.
     """
 
+    mse = calculate_mse(predicted, target)
     psnr = calculate_psnr(predicted, target)
     ssim = calculate_ssim(predicted, target)
 
     return {
+        "mse": mse,
         "psnr": psnr,
         "ssim": ssim
     }

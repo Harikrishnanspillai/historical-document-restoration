@@ -4,5 +4,6 @@ __pycache__/
 .vscode/
 outputs/
 dataset/
+data/
 checkpoints/
 *.pth

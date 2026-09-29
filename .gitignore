@@ -4,4 +4,12 @@ __pycache__/
 dataset/
 checkpoints/
 outputs/
+.venv/
+__pycache__/
+*.pyc
+.vscode/
+outputs/
+dataset/
+data/
+checkpoints/
 *.pth

@@ -1,3 +1,9 @@
+.vscode/
+.venv/
+__pycache__/
+dataset/
+checkpoints/
+outputs/
 .venv/
 __pycache__/
 *.pyc

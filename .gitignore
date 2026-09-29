@@ -1,15 +1,66 @@
-.vscode/
-.venv/
+# =========================
+# Python
+# =========================
 __pycache__/
-dataset/
-checkpoints/
-outputs/
+*.py[cod]
+*.pyo
+*.pyd
+
+# =========================
+# Virtual environments
+# =========================
 .venv/
-__pycache__/
-*.pyc
+venv/
+env/
+ENV/
+
+# =========================
+# IDE / Editor
+# =========================
 .vscode/
-outputs/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# Datasets
+# =========================
 dataset/
 data/
+datasets/
+
+# =========================
+# Training checkpoints / weights
+# =========================
 checkpoints/
 *.pth
+*.pt
+*.ckpt
+*.safetensors
+
+# =========================
+# Generated outputs
+# =========================
+outputs/
+results/
+
+# =========================
+# SwinIR downloaded model weights
+# =========================
+models/Swin/SwinIR/model_zoo/
+
+# =========================
+# SwinIR generated figures/results
+# =========================
+models/Swin/SwinIR/results/
+
+# =========================
+# Logs
+# =========================
+*.log
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db

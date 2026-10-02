@@ -8,12 +8,7 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-from degradation.degradation import (
-    add_gaussian_noise,
-    add_blur,
-    add_fading,
-    add_stains
-)
+from degradation.degradation import *
 
 
 # ============================================================
@@ -21,9 +16,7 @@ from degradation.degradation import (
 # ============================================================
 
 # Original dataset in Downloads
-SOURCE_DIR = Path(
-    r"C:\Users\PARVATHY\Downloads\BleedThroughDatabase\Bleed-Through Database Images Update"
-)
+SOURCE_DIR = Path(__file__).parent.parent / "dataset"
 print("SOURCE_DIR:", SOURCE_DIR)
 print("SOURCE EXISTS:", SOURCE_DIR.exists())
 # Project data directory
@@ -351,6 +344,99 @@ def generate_bleedthrough_dataset(
 
 
 # ============================================================
+# GENERATE RANDOM DEGRADATION DATASET
+# ============================================================
+
+RANDOM_DEGRADATION_RNG = np.random.default_rng(SEED)
+
+
+
+def find_opposite_side(gt_source):
+
+    filename = gt_source.name
+
+    if filename.endswith("r.gt.tif"):
+        opposite_name = filename.replace(
+            "r.gt.tif", "v.gt.tif"
+        )
+
+    elif filename.endswith("v.gt.tif"):
+        opposite_name = filename.replace(
+            "v.gt.tif", "r.gt.tif"
+        )
+
+    else:
+        # This image has no recto/verso suffix.
+        return None
+
+    opposite_path = SOURCE_DIR / opposite_name
+
+    if opposite_path.exists():
+        return opposite_path
+
+    # No matching opposite-side image.
+    return None
+
+
+def generate_random_degradation_dataset(split_data):
+
+    dataset_name = "random_degradation"
+
+    print("\nGenerating random_degradation dataset...")
+
+    create_directories(dataset_name)
+
+    for split, pairs in split_data.items():
+
+        print(f"  {split}: {len(pairs)} images")
+
+        for degraded_source, gt_source in pairs:
+
+            clean_image = load_grayscale(gt_source)
+
+            # Find matching verso/recto image if available.
+            opposite_path = find_opposite_side(gt_source)
+
+            verso_image = None
+
+            if opposite_path is not None:
+                verso_image = load_grayscale(opposite_path)
+
+                if clean_image.shape != verso_image.shape:
+                    print(
+                        f"WARNING: Dimension mismatch for "
+                        f"{gt_source.name}. Bleed-through disabled."
+                    )
+                    verso_image = None
+
+            # Randomly select 2–5 degradations.
+            degraded_image, selected = random_degradation(
+                image=clean_image,
+                verso_image=verso_image,
+                min_degradations=2,
+                max_degradations=5 if verso_image is not None else 4,
+                rng=RANDOM_DEGRADATION_RNG,
+                return_degradations=True
+            )
+
+            filename = gt_source.name
+
+            clean_output = (
+                OUTPUT_DIR / dataset_name / split / "clean" / filename
+            )
+
+            degraded_output = (
+                OUTPUT_DIR / dataset_name / split / "degraded" / filename
+            )
+
+            save_image(clean_image, clean_output)
+            save_image(degraded_image, degraded_output)
+
+            print(
+                f"    {filename}: {', '.join(selected)}"
+            )
+
+# ============================================================
 # VERIFY DATASET
 # ============================================================
 
@@ -480,6 +566,9 @@ def main():
             split_data
         )
 
+    # Generate random combinations of degradations
+    generate_random_degradation_dataset(split_data)
+
     # --------------------------------------------------------
     # Prepare real bleed-through
     # --------------------------------------------------------
@@ -509,7 +598,8 @@ def main():
         "blur",
         "fading",
         "stains",
-        "bleedthrough"
+        "bleedthrough",
+        "random_degradation"
     ]
 
     for dataset_name in all_datasets:

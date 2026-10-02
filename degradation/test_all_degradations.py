@@ -2,14 +2,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from degradation import (
-    add_gaussian_noise,
-    add_blur,
-    add_fading,
-    add_stains,
-    add_bleedthrough,
-    apply_mixed_degradation
-)
+from degradation import *
 
 # --------------------------------------------------
 # Paths
@@ -217,101 +210,7 @@ print("=" * 50)
 
 for i in range(10):
 
-    # Select between 2 and 5 degradations
-    num_selected = rng.integers(
-        2,
-        len(degradations) + 1
-    )
-
-    selected = rng.choice(
-        degradations,
-        size=num_selected,
-        replace=False
-    )
-
-    selected = list(selected)
-
-    print(
-        f"\nRandom combination {i + 1}:"
-    )
-
-    for degradation in degradations:
-
-        if degradation in selected:
-            print(
-                f"  {degradation}: YES"
-            )
-        else:
-            print(
-                f"  {degradation}: NO"
-            )
-
-
-    # Start with clean image
-    mixed_random = image.copy()
-
-
-    # ----------------------------------------------
-    # Apply blur
-    # ----------------------------------------------
-
-    if "blur" in selected:
-
-        mixed_random = add_blur(
-            mixed_random,
-            sigma=1.8
-        )
-
-
-    # ----------------------------------------------
-    # Apply fading
-    # ----------------------------------------------
-
-    if "fading" in selected:
-
-        mixed_random = add_fading(
-            mixed_random,
-            strength=0.25
-        )
-
-
-    # ----------------------------------------------
-    # Apply stains
-    # ----------------------------------------------
-
-    if "stains" in selected:
-
-        mixed_random = add_stains(
-            mixed_random,
-            num_stains=8,
-            min_radius=15,
-            max_radius=80
-        )
-
-
-    # ----------------------------------------------
-    # Apply noise
-    # ----------------------------------------------
-
-    if "noise" in selected:
-
-        mixed_random = add_gaussian_noise(
-            mixed_random,
-            sigma=0.10
-        )
-
-
-    # ----------------------------------------------
-    # Apply bleed-through
-    # ----------------------------------------------
-
-    if "bleedthrough" in selected:
-
-        mixed_random = add_bleedthrough(
-            mixed_random,
-            verso,
-            alpha=0.22
-        )
+    mixed_random = random_degradation(image, verso_image=verso)
 
 
     # ----------------------------------------------

@@ -23,13 +23,6 @@ ENV/
 *.swo
 
 # =========================
-# Datasets
-# =========================
-dataset/
-data/
-datasets/
-
-# =========================
 # Training checkpoints / weights
 # =========================
 checkpoints/

@@ -1,229 +1,95 @@
 from pathlib import Path
 import random
-
 import numpy as np
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
 
+CATEGORIES = ("noise", "blur", "fading", "stains", "bleedthrough", "random_degradation")
+
 
 class HistoricalDocumentDataset(Dataset):
-    """
-    Paired historical-document dataset with random patch extraction.
+    """Loads paired clean/degraded TIFFs from all category folders."""
 
-    Expected structure:
+    EXTENSIONS = {".tif", ".tiff"}
 
-    dataset/
-    ├── train/
-    │   ├── degraded/
-    │   └── gt/
-    ├── val/
-    │   ├── degraded/
-    │   └── gt/
-    └── test/
-        ├── degraded/
-        └── gt/
-    """
-
-    def __init__(
-        self,
-        root_dir,
-        split="train",
-        patch_size=128,
-        patches_per_image=20
-    ):
+    def __init__(self, root_dir, split="train", categories=CATEGORIES,
+                 patch_size=128, patches_per_image=10):
         self.root_dir = Path(root_dir)
         self.split = split
+        self.categories = tuple(categories)
         self.patch_size = patch_size
         self.patches_per_image = patches_per_image
-
-        self.degraded_dir = self.root_dir / split / "degraded"
-        self.gt_dir = self.root_dir / split / "gt"
-
-        if not self.degraded_dir.exists():
-            raise FileNotFoundError(
-                f"Degraded directory not found: {self.degraded_dir}"
-            )
-
-        if not self.gt_dir.exists():
-            raise FileNotFoundError(
-                f"Ground-truth directory not found: {self.gt_dir}"
-            )
-
-        self.degraded_files = sorted(
-            self.degraded_dir.glob("*.tif")
-        )
-
-        if not self.degraded_files:
-            raise RuntimeError(
-                f"No TIFF images found in {self.degraded_dir}"
-            )
+        if split not in {"train", "val", "test"}:
+            raise ValueError("split must be train, val, or test")
 
         self.pairs = []
+        self.category_counts = {}
+        for category in self.categories:
+            folder = self.root_dir / category / split
+            clean_dir, degraded_dir = folder / "clean", folder / "degraded"
+            if not clean_dir.is_dir() or not degraded_dir.is_dir():
+                raise FileNotFoundError(f"Expected clean/degraded folders under {folder}")
 
-        for degraded_path in self.degraded_files:
-            gt_path = self.gt_dir / (
-                degraded_path.stem + ".gt.tif"
-            )
-
-            if not gt_path.exists():
-                raise FileNotFoundError(
-                    f"GT missing for {degraded_path.name}"
+            clean = {p.name: p for p in clean_dir.iterdir()
+                     if p.is_file() and p.suffix.lower() in self.EXTENSIONS}
+            degraded = {p.name: p for p in degraded_dir.iterdir()
+                        if p.is_file() and p.suffix.lower() in self.EXTENSIONS}
+            if set(clean) != set(degraded):
+                raise RuntimeError(
+                    f"Filename mismatch in {category}/{split}; "
+                    f"missing clean={sorted(set(degraded)-set(clean))[:5]}, "
+                    f"missing degraded={sorted(set(clean)-set(degraded))[:5]}"
                 )
+            pairs = [(category, degraded[n], clean[n]) for n in sorted(degraded)]
+            if not pairs:
+                raise RuntimeError(f"No TIFF pairs found in {folder}")
+            self.pairs.extend(pairs)
+            self.category_counts[category] = len(pairs)
 
-            self.pairs.append(
-                (degraded_path, gt_path)
-            )
-
-        # Training gets multiple random patches per document.
-        # Validation/test will eventually use full-image tiled inference.
-        if split in ("train", "val"):
-            self.total_samples = (
-                len(self.pairs) * patches_per_image
-            )
-        else:
-            self.total_samples = len(self.pairs)
-
-        print(
-            f"[{split.upper()}] Loaded {len(self.pairs)} image pairs"
-        )
-
-        if split in ("train", "val"):
-            print(
-                f"[{split.upper()}] "
-                f"{patches_per_image} patches per image"
-            )
-            print(
-                f"[{split.upper()}] "
-                f"Total training samples: {self.total_samples}"
-            )
+        self.samples_per_image = patches_per_image if split in {"train", "val"} else 1
+        self.total_samples = len(self.pairs) * self.samples_per_image
+        print(f"[{split.upper()}] {len(self.pairs)} pairs across {len(self.categories)} categories")
+        for category, count in self.category_counts.items():
+            print(f"  {category}: {count}")
+        print(f"[{split.upper()}] Dataset samples: {self.total_samples}")
 
     def __len__(self):
         return self.total_samples
 
-    def _load_pair(self, index):
-        degraded_path, gt_path = self.pairs[index]
-
-        degraded = Image.open(degraded_path).convert("L")
-        gt = Image.open(gt_path).convert("L")
-
-        degraded = np.asarray(
-            degraded,
-            dtype=np.float32
-        )
-
-        gt = np.asarray(
-            gt,
-            dtype=np.float32
-        )
-
-        if degraded.shape != gt.shape:
-            raise ValueError(
-                f"Dimension mismatch:\n"
-                f"Degraded: {degraded_path.name} "
-                f"{degraded.shape}\n"
-                f"GT: {gt_path.name} "
-                f"{gt.shape}"
-            )
-
-        return degraded, gt
+    @staticmethod
+    def _read(path):
+        with Image.open(path) as im:
+            return np.asarray(im.convert("L"), dtype=np.float32)
 
     def __getitem__(self, index):
+        pair_index = index // self.samples_per_image
+        category, degraded_path, clean_path = self.pairs[pair_index]
+        degraded, clean = self._read(degraded_path), self._read(clean_path)
+        if degraded.shape != clean.shape:
+            raise ValueError(f"Dimension mismatch: {category}/{degraded_path.name}")
 
-        # ----------------------------------------------------
-        # TRAINING
-        # ----------------------------------------------------
+        if self.split in {"train", "val"}:
+            h, w = degraded.shape
+            pad_h, pad_w = max(0, self.patch_size-h), max(0, self.patch_size-w)
+            if pad_h or pad_w:
+                mode = "reflect" if h > pad_h and w > pad_w else "edge"
+                degraded = np.pad(degraded, ((0,pad_h),(0,pad_w)), mode=mode)
+                clean = np.pad(clean, ((0,pad_h),(0,pad_w)), mode=mode)
+            h, w = degraded.shape
+            top = random.randint(0, h-self.patch_size)
+            left = random.randint(0, w-self.patch_size)
+            degraded = degraded[top:top+self.patch_size, left:left+self.patch_size]
+            clean = clean[top:top+self.patch_size, left:left+self.patch_size]
 
-        if self.split in ("train", "val"):
-
-            # Map sample index to an actual document.
-            image_index = index // self.patches_per_image
-
-            degraded, gt = self._load_pair(image_index)
-
-            height, width = degraded.shape
-
-            if (
-                height < self.patch_size
-                or width < self.patch_size
-            ):
-                raise ValueError(
-                    f"Image is smaller than patch size: "
-                    f"{width}x{height}"
-                )
-
-            # Random patch location
-            top = random.randint(
-                0,
-                height - self.patch_size
-            )
-
-            left = random.randint(
-                0,
-                width - self.patch_size
-            )
-
-            degraded = degraded[
-                top:top + self.patch_size,
-                left:left + self.patch_size
-            ]
-
-            gt = gt[
-                top:top + self.patch_size,
-                left:left + self.patch_size
-            ]
-
-        # ----------------------------------------------------
-        # VALIDATION / TEST
-        # ----------------------------------------------------
-
-        else:
-
-            degraded, gt = self._load_pair(index)
-
-        # Normalize [0,255] -> [0,1]
-        degraded = degraded / 255.0
-        gt = gt / 255.0
-
-        # H x W -> 1 x H x W
-        degraded = torch.from_numpy(
-            degraded.copy()
-        ).unsqueeze(0)
-
-        gt = torch.from_numpy(
-            gt.copy()
-        ).unsqueeze(0)
-
-        return degraded, gt
+        degraded = torch.from_numpy((degraded / 255.0).copy()).unsqueeze(0)
+        clean = torch.from_numpy((clean / 255.0).copy()).unsqueeze(0)
+        return degraded, clean
 
 
 if __name__ == "__main__":
-
-    print("=" * 60)
-    print("Testing training dataset")
-    print("=" * 60)
-
-    dataset = HistoricalDocumentDataset(
-        root_dir="dataset",
-        split="train",
-        patch_size=128,
-        patches_per_image=20
-    )
-
-    print()
-    print(f"Dataset length: {len(dataset)}")
-
-    degraded, gt = dataset[0]
-
-    print(f"Degraded shape: {degraded.shape}")
-    print(f"GT shape:       {gt.shape}")
-
-    print(
-        f"Degraded range: "
-        f"{degraded.min():.4f} - {degraded.max():.4f}"
-    )
-
-    print(
-        f"GT range:       "
-        f"{gt.min():.4f} - {gt.max():.4f}"
-    )
+    project_root = Path(__file__).resolve().parents[3]
+    ds = HistoricalDocumentDataset(project_root / "data", "train", patch_size=128, patches_per_image=10)
+    x, y = ds[0]
+    print("Samples:", len(ds), "| tensors:", tuple(x.shape), tuple(y.shape))
+    print("Ranges:", (x.min().item(), x.max().item()), (y.min().item(), y.max().item()))

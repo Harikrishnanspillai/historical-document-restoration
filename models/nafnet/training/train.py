@@ -20,7 +20,7 @@ SAVE_DIR = ROOT / "models" / "nafnet" / "checkpoints"
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
 
 PATCH_SIZE = 128
-BATCH_SIZE = 2
+BATCH_SIZE = 4
 EPOCHS = 20
 LEARNING_RATE = 0.0001
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -82,8 +82,8 @@ def main():
                 size = PATCH_SIZE
                 top = max(0, (h - size) // 2)
                 left = max(0, (w - size) // 2)
-                degraded = degraded[:, top:top + size, left:left + size]
-                clean = clean[:, top:top + size, left:left + size]
+                degraded = degraded[:, :, top:top + size, left:left + size]
+                clean = clean[:, :, top:top + size, left:left + size]
 
                 if degraded.shape[-2] < size or degraded.shape[-1] < size:
                     pad_h = size - degraded.shape[-2]

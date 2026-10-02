@@ -97,7 +97,7 @@ def main():
             list(input_dir.glob("*.png"))
         )
 
-        print(f"\\nRestoring {category}: {len(image_paths)} images")
+        print(f"\nRestoring {category}: {len(image_paths)} images")
 
         for image_path in image_paths:
             with torch.no_grad():
@@ -108,7 +108,7 @@ def main():
 
             print("Saved:", output_path.name)
 
-    print("\\nRestoration of all categories complete.")
+    print("\nRestoration of all categories complete.")
 
 
 if __name__ == "__main__":

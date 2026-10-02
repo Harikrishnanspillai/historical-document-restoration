@@ -10,10 +10,11 @@ from unet import UNet
 # Settings
 # -----------------------------
 
-INPUT_DIR = "../../data/test/recto"
-OUTPUT_DIR = "../../data/test/restored"
+DEGRADATION = "bleedthrough"
 
-MODEL_PATH = "unet_best.pth"
+INPUT_DIR = f"../../data/{DEGRADATION}/test/degraded"
+OUTPUT_DIR = f"../../data/{DEGRADATION}/test/restored"
+MODEL_PATH = f"unet_{DEGRADATION}_best.pth"
 
 DEVICE = torch.device(
     "cuda" if torch.cuda.is_available() else "cpu"

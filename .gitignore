@@ -57,3 +57,6 @@ models/Swin/SwinIR/results/
 # =========================
 .DS_Store
 Thumbs.db
+
+data/*/test/restored/
+models/restom/Restormer/experiments/

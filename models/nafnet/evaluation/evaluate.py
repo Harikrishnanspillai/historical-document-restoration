@@ -23,21 +23,21 @@ def calculate_metrics(predicted, target):
 
 def print_average(title, metrics):
     if not metrics:
-        print(f"\\nNo images evaluated for {title}.")
+        print(f"\nNo images evaluated for {title}.")
         return
 
-    print(f"\\n{title}")
+    print(f"\n{title}")
     print("-" * 70)
 
     print(f"Degraded MSE  : {np.mean([x[0] for x in metrics]):.6f}")
     print(f"Restored MSE  : {np.mean([x[3] for x in metrics]):.6f}")
     print(f"MSE change    : {np.mean([x[3] - x[0] for x in metrics]):+.6f}")
 
-    print(f"\\nDegraded PSNR : {np.mean([x[1] for x in metrics]):.2f} dB")
+    print(f"\nDegraded PSNR : {np.mean([x[1] for x in metrics]):.2f} dB")
     print(f"Restored PSNR : {np.mean([x[4] for x in metrics]):.2f} dB")
     print(f"PSNR gain     : {np.mean([x[4] - x[1] for x in metrics]):+.2f} dB")
 
-    print(f"\\nDegraded SSIM : {np.mean([x[2] for x in metrics]):.4f}")
+    print(f"\nDegraded SSIM : {np.mean([x[2] for x in metrics]):.4f}")
     print(f"Restored SSIM : {np.mean([x[5] for x in metrics]):.4f}")
     print(f"SSIM gain     : {np.mean([x[5] - x[2] for x in metrics]):+.4f}")
 
@@ -65,10 +65,10 @@ def main():
             list(degraded_folder.glob("*.png"))
         )
 
-        print(f"\\n{'=' * 70}")
+        print(f"\n{'=' * 70}")
         print(f"{category.upper()} EVALUATION")
         print("=" * 70)
-        print(f"Test images found: {len(image_paths)}\\n")
+        print(f"Test images found: {len(image_paths)}\n")
 
         for degraded_path in image_paths:
             clean_path = clean_folder / degraded_path.name
@@ -117,7 +117,7 @@ def main():
 
         print_average(f"{category.upper()} AVERAGE RESULTS", category_metrics)
 
-    print(f"\\n{'=' * 70}")
+    print(f"\n{'=' * 70}")
     print("OVERALL AVERAGE RESULTS")
     print("=" * 70)
     print(f"Total images evaluated: {len(all_metrics)}")

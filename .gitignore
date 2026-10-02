@@ -22,13 +22,7 @@ ENV/
 *.swp
 *.swo
 
-# =========================
-# Training checkpoints / weights
-# =========================
 
-*.pt
-*.ckpt
-*.safetensors
 
 # =========================
 # Generated outputs

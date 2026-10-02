@@ -10,15 +10,17 @@ from unet import UNet
 # -----------------------------
 # Configuration
 # -----------------------------
-TRAIN_DIR = "../../data/train"
-VAL_DIR = "../../data/val"
+DEGRADATION = "bleedthrough"
+
+TRAIN_DIR = f"../../data/{DEGRADATION}/train"
+VAL_DIR = f"../../data/{DEGRADATION}/val"
 
 BATCH_SIZE = 4
 EPOCHS = 30
 LEARNING_RATE = 1e-3
 
-BEST_MODEL_PATH = "unet_best.pth"
-HISTORY_PATH = "training_history.json"
+BEST_MODEL_PATH = f"unet_{DEGRADATION}_best.pth"
+HISTORY_PATH = f"training_history_{DEGRADATION}.json"
 
 
 # -----------------------------
@@ -26,6 +28,7 @@ HISTORY_PATH = "training_history.json"
 # -----------------------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Device: {device}")
+print(f"Degradation: {DEGRADATION}")
 
 
 # -----------------------------

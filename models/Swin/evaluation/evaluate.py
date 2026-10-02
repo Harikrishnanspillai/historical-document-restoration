@@ -1,384 +1,105 @@
+import csv
+import sys
 from pathlib import Path
-
 import numpy as np
 from PIL import Image
 
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
 from metrics import calculate_metrics
 
-
-# ============================================================
-# Configuration
-# ============================================================
-
-TEST_DIR = Path("dataset/test")
-DEGRADED_DIR = TEST_DIR / "degraded"
-GT_DIR = TEST_DIR / "gt"
-
-RESTORED_DIR = Path("outputs/restored")
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+SWIN_ROOT = Path(__file__).resolve().parents[1]
+CATEGORIES = ("noise", "blur", "fading", "stains", "bleedthrough", "random_degradation")
+DATA_ROOT = PROJECT_ROOT / "data"
+RESTORED_ROOT = SWIN_ROOT / "outputs" / "restored"
+RESULTS_DIR = SWIN_ROOT / "outputs" / "evaluation"
 
 
-# ============================================================
-# Image loading
-# ============================================================
+def load_gray(path):
+    with Image.open(path) as im:
+        return np.asarray(im.convert("L"), dtype=np.float32) / 255.0
 
-def load_grayscale(path):
-    """
-    Load an image as grayscale and normalize to [0, 1].
-    """
-
-    image = Image.open(path).convert("L")
-
-    image = np.asarray(
-        image,
-        dtype=np.float32
-    )
-
-    image /= 255.0
-
-    return image
-
-
-# ============================================================
-# Main evaluation
-# ============================================================
 
 def evaluate():
-
-    print("=" * 70)
-    print("Historical Document Restoration Evaluation")
-    print("=" * 70)
-
-    # --------------------------------------------------------
-    # Check directories
-    # --------------------------------------------------------
-
-    if not DEGRADED_DIR.exists():
-        raise FileNotFoundError(
-            f"Degraded test directory not found: {DEGRADED_DIR}"
-        )
-
-    if not GT_DIR.exists():
-        raise FileNotFoundError(
-            f"Ground-truth directory not found: {GT_DIR}"
-        )
-
-    if not RESTORED_DIR.exists():
-
-        print()
-        print(
-            f"Restored image directory does not exist yet:"
-            f"\n{RESTORED_DIR}"
-        )
-        print()
-        print(
-            "Run the SwinIR inference step first."
-        )
-
-        return
-
-    # --------------------------------------------------------
-    # Find test images
-    # --------------------------------------------------------
-
-    degraded_files = sorted(
-        DEGRADED_DIR.glob("*.tif")
-    )
-
-    if not degraded_files:
-        raise RuntimeError(
-            f"No TIFF files found in {DEGRADED_DIR}"
-        )
-
-    results = []
-
-    print()
-    print(
-        f"Test images found: {len(degraded_files)}"
-    )
-    print()
-
-    # ========================================================
-    # Evaluate each image
-    # ========================================================
-
-    for degraded_path in degraded_files:
-
-        # ----------------------------------------------------
-        # File names
-        # ----------------------------------------------------
-
-        image_name = degraded_path.stem
-
-        gt_path = GT_DIR / (
-            image_name + ".gt.tif"
-        )
-
-        restored_path = RESTORED_DIR / (
-            image_name + "_restored.tif"
-        )
-
-        # ----------------------------------------------------
-        # Check required files
-        # ----------------------------------------------------
-
-        if not gt_path.exists():
-
-            print(
-                f"[SKIP] GT missing: "
-                f"{gt_path.name}"
-            )
-
-            continue
-
-        if not restored_path.exists():
-
-            print(
-                f"[SKIP] Restored image missing: "
-                f"{restored_path.name}"
-            )
-
-            continue
-
-        # ----------------------------------------------------
-        # Load images
-        # ----------------------------------------------------
-
-        degraded = load_grayscale(
-            degraded_path
-        )
-
-        restored = load_grayscale(
-            restored_path
-        )
-
-        gt = load_grayscale(
-            gt_path
-        )
-
-        # ----------------------------------------------------
-        # Check dimensions
-        # ----------------------------------------------------
-
-        if degraded.shape != gt.shape:
-
-            raise ValueError(
-                f"Degraded/GT dimension mismatch for "
-                f"{image_name}:\n"
-                f"Degraded: {degraded.shape}\n"
-                f"GT:       {gt.shape}"
-            )
-
-        if restored.shape != gt.shape:
-
-            raise ValueError(
-                f"Restored/GT dimension mismatch for "
-                f"{image_name}:\n"
-                f"Restored: {restored.shape}\n"
-                f"GT:       {gt.shape}"
-            )
-
-        # ----------------------------------------------------
-        # Calculate all metrics
-        # ----------------------------------------------------
-
-        degraded_metrics = calculate_metrics(
-            degraded,
-            gt
-        )
-
-        restored_metrics = calculate_metrics(
-            restored,
-            gt
-        )
-
-        # ----------------------------------------------------
-        # Calculate improvements
-        # ----------------------------------------------------
-
-        mse_change = (
-            restored_metrics["mse"]
-            - degraded_metrics["mse"]
-        )
-
-        psnr_improvement = (
-            restored_metrics["psnr"]
-            - degraded_metrics["psnr"]
-        )
-
-        ssim_improvement = (
-            restored_metrics["ssim"]
-            - degraded_metrics["ssim"]
-        )
-
-        # ----------------------------------------------------
-        # Store results
-        # ----------------------------------------------------
-
-        results.append({
-
-            "name": image_name,
-
-            "degraded_mse":
-                degraded_metrics["mse"],
-
-            "restored_mse":
-                restored_metrics["mse"],
-
-            "mse_change":
-                mse_change,
-
-            "degraded_psnr":
-                degraded_metrics["psnr"],
-
-            "restored_psnr":
-                restored_metrics["psnr"],
-
-            "psnr_improvement":
-                psnr_improvement,
-
-            "degraded_ssim":
-                degraded_metrics["ssim"],
-
-            "restored_ssim":
-                restored_metrics["ssim"],
-
-            "ssim_improvement":
-                ssim_improvement
-        })
-
-        # ----------------------------------------------------
-        # Print result
-        # ----------------------------------------------------
-
-        print(
-            f"{image_name:<30} "
-            f"MSE: "
-            f"{degraded_metrics['mse']:.6f} → "
-            f"{restored_metrics['mse']:.6f}   "
-            f"PSNR: "
-            f"{degraded_metrics['psnr']:.2f} → "
-            f"{restored_metrics['psnr']:.2f} dB   "
-            f"SSIM: "
-            f"{degraded_metrics['ssim']:.4f} → "
-            f"{restored_metrics['ssim']:.4f}"
-        )
-
-    # ========================================================
-    # Overall results
-    # ========================================================
-
-    if not results:
-
-        print()
-        print("No images were evaluated.")
-        return
-
-    # --------------------------------------------------------
-    # Average MSE
-    # --------------------------------------------------------
-
-    avg_degraded_mse = np.mean([
-        r["degraded_mse"]
-        for r in results
-    ])
-
-    avg_restored_mse = np.mean([
-        r["restored_mse"]
-        for r in results
-    ])
-
-    # --------------------------------------------------------
-    # Average PSNR
-    # --------------------------------------------------------
-
-    avg_degraded_psnr = np.mean([
-        r["degraded_psnr"]
-        for r in results
-    ])
-
-    avg_restored_psnr = np.mean([
-        r["restored_psnr"]
-        for r in results
-    ])
-
-    # --------------------------------------------------------
-    # Average SSIM
-    # --------------------------------------------------------
-
-    avg_degraded_ssim = np.mean([
-        r["degraded_ssim"]
-        for r in results
-    ])
-
-    avg_restored_ssim = np.mean([
-        r["restored_ssim"]
-        for r in results
-    ])
-
-    # ========================================================
-    # Print average results
-    # ========================================================
-
-    print()
-    print("=" * 70)
-    print("AVERAGE RESULTS")
-    print("=" * 70)
-
-    # MSE
-
-    print()
-    print(
-        f"Degraded MSE  : "
-        f"{avg_degraded_mse:.6f}"
-    )
-
-    print(
-        f"Restored MSE  : "
-        f"{avg_restored_mse:.6f}"
-    )
-
-    print(
-        f"MSE change    : "
-        f"{avg_restored_mse - avg_degraded_mse:+.6f}"
-    )
-
-    # PSNR
-
-    print()
-    print(
-        f"Degraded PSNR : "
-        f"{avg_degraded_psnr:.2f} dB"
-    )
-
-    print(
-        f"Restored PSNR : "
-        f"{avg_restored_psnr:.2f} dB"
-    )
-
-    print(
-        f"PSNR gain     : "
-        f"{avg_restored_psnr - avg_degraded_psnr:+.2f} dB"
-    )
-
-    # SSIM
-
-    print()
-    print(
-        f"Degraded SSIM : "
-        f"{avg_degraded_ssim:.4f}"
-    )
-
-    print(
-        f"Restored SSIM : "
-        f"{avg_restored_ssim:.4f}"
-    )
-
-    print(
-        f"SSIM gain     : "
-        f"{avg_restored_ssim - avg_degraded_ssim:+.4f}"
-    )
-
-    print("=" * 70)
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    per_image, summaries = [], []
+
+    for category in CATEGORIES:
+        test_root = DATA_ROOT / category / "test"
+        degraded_dir, clean_dir = test_root / "degraded", test_root / "clean"
+        restored_dir = RESTORED_ROOT / category
+        for folder in (degraded_dir, clean_dir, restored_dir):
+            if not folder.is_dir():
+                raise FileNotFoundError(f"Required directory missing: {folder}")
+
+        degraded_files = sorted(p for p in degraded_dir.iterdir()
+                                if p.is_file() and p.suffix.lower() in {".tif", ".tiff"})
+        if not degraded_files:
+            raise RuntimeError(f"No test TIFFs in {degraded_dir}")
+
+        category_rows = []
+        print(f"\n--- {category}: {len(degraded_files)} images ---")
+        for degraded_path in degraded_files:
+            name = degraded_path.name
+            clean_path, restored_path = clean_dir / name, restored_dir / name
+            if not clean_path.is_file():
+                raise FileNotFoundError(f"Clean counterpart missing: {clean_path}")
+            if not restored_path.is_file():
+                raise FileNotFoundError(f"Restored image missing: {restored_path}; run restore.py")
+
+            degraded, clean, restored = map(load_gray, (degraded_path, clean_path, restored_path))
+            if degraded.shape != clean.shape or restored.shape != clean.shape:
+                raise ValueError(
+                    f"Shape mismatch for {category}/{name}: "
+                    f"degraded={degraded.shape}, clean={clean.shape}, restored={restored.shape}"
+                )
+
+            dm, rm = calculate_metrics(degraded, clean), calculate_metrics(restored, clean)
+            row = {
+                "category": category, "filename": name,
+                "degraded_mse": float(dm["mse"]), "restored_mse": float(rm["mse"]),
+                "degraded_psnr": float(dm["psnr"]), "restored_psnr": float(rm["psnr"]),
+                "degraded_ssim": float(dm["ssim"]), "restored_ssim": float(rm["ssim"]),
+            }
+            row["mse_change"] = row["restored_mse"] - row["degraded_mse"]
+            row["psnr_improvement"] = row["restored_psnr"] - row["degraded_psnr"]
+            row["ssim_improvement"] = row["restored_ssim"] - row["degraded_ssim"]
+            category_rows.append(row)
+            per_image.append(row)
+            print(f"{name}: MSE {row['degraded_mse']:.5f}->{row['restored_mse']:.5f} | "
+                  f"PSNR {row['degraded_psnr']:.2f}->{row['restored_psnr']:.2f} | "
+                  f"SSIM {row['degraded_ssim']:.4f}->{row['restored_ssim']:.4f}")
+
+        summary = {"category": category, "image_count": len(category_rows)}
+        for metric in ("mse", "psnr", "ssim"):
+            before = float(np.mean([r[f"degraded_{metric}"] for r in category_rows]))
+            after = float(np.mean([r[f"restored_{metric}"] for r in category_rows]))
+            summary[f"degraded_{metric}"] = before
+            summary[f"restored_{metric}"] = after
+            summary[f"{metric}_improvement"] = after - before
+        summaries.append(summary)
+        print(f"Category average | MSE {summary['degraded_mse']:.6f}->{summary['restored_mse']:.6f} "
+              f"| PSNR {summary['degraded_psnr']:.3f}->{summary['restored_psnr']:.3f} "
+              f"| SSIM {summary['degraded_ssim']:.4f}->{summary['restored_ssim']:.4f}")
+
+    with (RESULTS_DIR / "per_image_results.csv").open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=list(per_image[0].keys()))
+        writer.writeheader()
+        writer.writerows(per_image)
+
+    with (RESULTS_DIR / "category_summary.csv").open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=list(summaries[0].keys()))
+        writer.writeheader()
+        writer.writerows(summaries)
+
+    print("\n=== OVERALL (mean across all test images) ===")
+    print("Images evaluated:", len(per_image))
+    for metric in ("mse", "psnr", "ssim"):
+        before = np.mean([r[f"degraded_{metric}"] for r in per_image])
+        after = np.mean([r[f"restored_{metric}"] for r in per_image])
+        print(f"{metric.upper()}: {before:.6f} -> {after:.6f}")
+    print("CSV results saved in:", RESULTS_DIR)
 
 
 if __name__ == "__main__":

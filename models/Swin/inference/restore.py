@@ -1,330 +1,111 @@
 import sys
 from pathlib import Path
-
 import numpy as np
 import torch
+import torch.nn.functional as F
 from PIL import Image
 from tqdm import tqdm
 
-# ------------------------------------------------------------
-# Paths
-# ------------------------------------------------------------
+SWIN_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+SWINIR_DIR = SWIN_ROOT / "SwinIR"
+sys.path.insert(0, str(SWINIR_DIR))
+from models.network_swinir import SwinIR
 
-ROOT = Path(__file__).resolve().parent.parent
-
-TEST_DIR = ROOT / "dataset" / "test" / "degraded"
-CHECKPOINT_PATH = ROOT / "checkpoints" / "swinir_best.pth"
-OUTPUT_DIR = ROOT / "outputs" / "restored"
-
-# ------------------------------------------------------------
-# Configuration
-# ------------------------------------------------------------
-
-PATCH_SIZE = 128
-OVERLAP = 16
-
+CATEGORIES = ("noise", "blur", "fading", "stains", "bleedthrough", "random_degradation")
+PATCH_SIZE, OVERLAP = 128, 16
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DATA_ROOT = PROJECT_ROOT / "data"
+CHECKPOINT_PATH = SWIN_ROOT / "checkpoints" / "swinir_best.pth"
+OUTPUT_ROOT = SWIN_ROOT / "outputs" / "restored"
 
-
-# ------------------------------------------------------------
-# Load SwinIR
-# ------------------------------------------------------------
 
 def create_model():
-    """
-    Create the same SwinIR architecture used during training.
-    """
-
-    sys.path.insert(0, str(ROOT))
-
-    from SwinIR.models.network_swinir import SwinIR
-
-    model = SwinIR(
-        upscale=1,
-        in_chans=1,
-        img_size=PATCH_SIZE,
-        window_size=8,
-        img_range=1.0,
-        depths=[6, 6, 6, 6, 6, 6],
-        embed_dim=180,
-        num_heads=[6, 6, 6, 6, 6, 6],
-        mlp_ratio=2,
-        upsampler="",
-        resi_connection="1conv"
+    return SwinIR(
+        upscale=1, in_chans=1, img_size=PATCH_SIZE, window_size=8,
+        img_range=1.0, depths=[6,6,6,6,6,6], embed_dim=180,
+        num_heads=[6,6,6,6,6,6], mlp_ratio=2,
+        upsampler="", resi_connection="1conv"
     )
 
-    return model
-
-
-# ------------------------------------------------------------
-# Load checkpoint
-# ------------------------------------------------------------
 
 def load_model():
-    print("Creating SwinIR model...")
-
+    if not CHECKPOINT_PATH.is_file():
+        raise FileNotFoundError(f"Checkpoint not found: {CHECKPOINT_PATH}")
+    checkpoint = torch.load(CHECKPOINT_PATH, map_location="cpu")
     model = create_model()
-
-    print(f"Loading checkpoint: {CHECKPOINT_PATH}")
-
-    checkpoint = torch.load(
-        CHECKPOINT_PATH,
-        map_location="cpu"
-    )
-
-    model.load_state_dict(
-        checkpoint["model_state_dict"]
-    )
-
-    model = model.to(DEVICE)
-    model.eval()
-
-    print(f"Checkpoint epoch: {checkpoint['epoch']}")
-    print(f"Validation loss: {checkpoint['val_loss']:.6f}")
-    print(f"Device: {DEVICE}")
-
-    if DEVICE.type == "cuda":
-        print(f"GPU: {torch.cuda.get_device_name(0)}")
-
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.to(DEVICE).eval()
+    print(f"Loaded checkpoint epoch {checkpoint.get('epoch', 'unknown')} on {DEVICE}")
     return model
 
 
-# ------------------------------------------------------------
-# Image loading
-# ------------------------------------------------------------
-
 def load_image(path):
-    """
-    Load grayscale TIFF and convert it to
-    a normalized PyTorch tensor.
-    """
+    with Image.open(path) as im:
+        arr = np.asarray(im.convert("L"), dtype=np.float32) / 255.0
+    return torch.from_numpy(arr.copy()).unsqueeze(0).unsqueeze(0)
 
-    image = Image.open(path).convert("L")
-
-    image = np.asarray(
-        image,
-        dtype=np.float32
-    ) / 255.0
-
-    tensor = torch.from_numpy(image)
-
-    tensor = tensor.unsqueeze(0).unsqueeze(0)
-
-    return tensor
-
-
-# ------------------------------------------------------------
-# Padding
-# ------------------------------------------------------------
 
 def pad_image(image):
-    """
-    Pad image so that it can be processed using
-    PATCH_SIZE tiles.
-    """
-
     _, _, h, w = image.shape
-
-    pad_h = (
-        PATCH_SIZE - h % PATCH_SIZE
-    ) % PATCH_SIZE
-
-    pad_w = (
-        PATCH_SIZE - w % PATCH_SIZE
-    ) % PATCH_SIZE
-
-    if pad_h > 0 or pad_w > 0:
-        image = torch.nn.functional.pad(
-            image,
-            (0, pad_w, 0, pad_h),
-            mode="reflect"
-        )
-
+    ph, pw = (PATCH_SIZE-h % PATCH_SIZE) % PATCH_SIZE, (PATCH_SIZE-w % PATCH_SIZE) % PATCH_SIZE
+    if ph or pw:
+        mode = "reflect" if h > ph and w > pw else "replicate"
+        image = F.pad(image, (0, pw, 0, ph), mode=mode)
     return image, h, w
 
 
-# ------------------------------------------------------------
-# Tiled inference
-# ------------------------------------------------------------
-
 @torch.no_grad()
 def restore_image(model, image):
-    """
-    Restore a full-resolution image using overlapping tiles.
-    """
-
     image, original_h, original_w = pad_image(image)
-
     _, _, h, w = image.shape
-
     stride = PATCH_SIZE - OVERLAP
+    ys = list(range(0, max(1, h-PATCH_SIZE+1), stride))
+    xs = list(range(0, max(1, w-PATCH_SIZE+1), stride))
+    if ys[-1] != h-PATCH_SIZE:
+        ys.append(h-PATCH_SIZE)
+    if xs[-1] != w-PATCH_SIZE:
+        xs.append(w-PATCH_SIZE)
 
-    output = torch.zeros_like(image)
+    output, weights = torch.zeros_like(image), torch.zeros_like(image)
+    for y in ys:
+        for x in xs:
+            tile = image[:, :, y:y+PATCH_SIZE, x:x+PATCH_SIZE].to(DEVICE)
+            restored = model(tile).float().cpu()
+            output[:, :, y:y+PATCH_SIZE, x:x+PATCH_SIZE] += restored
+            weights[:, :, y:y+PATCH_SIZE, x:x+PATCH_SIZE] += 1
+    output = output / weights.clamp_min(1)
+    return output[:, :, :original_h, :original_w]
 
-    weight = torch.zeros_like(image)
-
-    positions_y = list(
-        range(0, max(1, h - PATCH_SIZE + 1), stride)
-    )
-
-    positions_x = list(
-        range(0, max(1, w - PATCH_SIZE + 1), stride)
-    )
-
-    # Make sure the final tile reaches the image boundary
-    if positions_y[-1] != h - PATCH_SIZE:
-        positions_y.append(h - PATCH_SIZE)
-
-    if positions_x[-1] != w - PATCH_SIZE:
-        positions_x.append(w - PATCH_SIZE)
-
-    total_tiles = len(positions_y) * len(positions_x)
-
-    tile_number = 0
-
-    for y in positions_y:
-
-        for x in positions_x:
-
-            tile = image[
-                :,
-                :,
-                y:y + PATCH_SIZE,
-                x:x + PATCH_SIZE
-            ]
-
-            tile = tile.to(DEVICE)
-
-            restored = model(tile)
-
-            output[
-                :,
-                :,
-                y:y + PATCH_SIZE,
-                x:x + PATCH_SIZE
-            ] += restored.cpu()
-
-            weight[
-                :,
-                :,
-                y:y + PATCH_SIZE,
-                x:x + PATCH_SIZE
-            ] += 1.0
-
-            tile_number += 1
-
-    output /= weight
-
-    # Remove padding
-    output = output[
-        :,
-        :,
-        :original_h,
-        :original_w
-    ]
-
-    return output
-
-
-# ------------------------------------------------------------
-# Save image
-# ------------------------------------------------------------
 
 def save_image(tensor, path):
+    arr = tensor.squeeze().cpu().numpy()
+    arr = np.clip(arr * 255.0, 0, 255).round().astype(np.uint8)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(arr, mode="L").save(path)
 
-    image = tensor.squeeze().numpy()
-
-    image = np.clip(
-        image * 255.0,
-        0,
-        255
-    ).astype(np.uint8)
-
-    Image.fromarray(image).save(path)
-
-
-# ------------------------------------------------------------
-# Main
-# ------------------------------------------------------------
 
 def main():
-
-    print("=" * 70)
-    print("SwinIR Historical Document Restoration")
-    print("=" * 70)
-
-    if not CHECKPOINT_PATH.exists():
-        raise FileNotFoundError(
-            f"Checkpoint not found:\n{CHECKPOINT_PATH}"
-        )
-
-    if not TEST_DIR.exists():
-        raise FileNotFoundError(
-            f"Test directory not found:\n{TEST_DIR}"
-        )
-
-    OUTPUT_DIR.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    test_images = sorted(
-        [
-            p for p in TEST_DIR.iterdir()
-            if p.suffix.lower() in [".tif", ".tiff", ".png", ".jpg", ".jpeg"]
-        ]
-    )
-
-    print(f"Test images: {len(test_images)}")
-    print(f"Patch size: {PATCH_SIZE}x{PATCH_SIZE}")
-    print(f"Overlap: {OVERLAP}px")
-    print(f"Output: {OUTPUT_DIR}")
-    print()
-
     model = load_model()
-
-    print()
-    print("Starting restoration...")
-    print()
-
-    for image_path in tqdm(
-        test_images,
-        desc="Restoring"
-    ):
-
-        try:
-
-            image = load_image(image_path)
-
-            restored = restore_image(
-                model,
-                image
-            )
-
-            output_path = (
-                OUTPUT_DIR /
-                f"{image_path.stem}_restored.tif"
-            )
-
-            save_image(
-                restored,
-                output_path
-            )
-
-        except Exception as e:
-
-            print(
-                f"\nERROR processing {image_path.name}: {e}"
-            )
-
+    total = 0
+    for category in CATEGORIES:
+        source_dir = DATA_ROOT / category / "test" / "degraded"
+        target_dir = OUTPUT_ROOT / category
+        if not source_dir.is_dir():
+            raise FileNotFoundError(f"Missing test directory: {source_dir}")
+        paths = sorted(p for p in source_dir.iterdir()
+                       if p.is_file() and p.suffix.lower() in {".tif", ".tiff"})
+        if not paths:
+            raise RuntimeError(f"No TIFF test images in {source_dir}")
+        print(f"{category}: {len(paths)} images")
+        for path in tqdm(paths, desc=f"Restoring {category}"):
+            restored = restore_image(model, load_image(path))
+            # Retain source filename; category-specific output folders avoid collisions.
+            save_image(restored, target_dir / path.name)
+            total += 1
     if DEVICE.type == "cuda":
         torch.cuda.empty_cache()
-
-    print()
-    print("=" * 70)
-    print("RESTORATION COMPLETE")
-    print("=" * 70)
-    print(f"Restored images: {OUTPUT_DIR}")
+    print(f"Restored {total} images. Outputs: {OUTPUT_ROOT}")
 
 
 if __name__ == "__main__":

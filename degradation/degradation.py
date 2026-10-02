@@ -128,51 +128,79 @@ def add_bleedthrough(
     return np.clip(degraded, 0, 1)
 
 
+
 def apply_mixed_degradation(
     image,
     noise=False,
     blur=False,
     fading=False,
     stains=False,
-    noise_sigma=0.15,
-    blur_sigma=3.0,
-    fading_strength=0.4,
-    num_stains=8
+    bleedthrough=False,
+    verso_image=None,
+    noise_sigma=0.10,
+    blur_sigma=1.8,
+    fading_strength=0.25,
+    num_stains=8,
+    bleedthrough_alpha=0.22
 ):
     """
     Apply multiple synthetic degradations sequentially.
 
     Parameters:
-        image: Normalized grayscale image
-        noise: Apply Gaussian noise
-        blur: Apply Gaussian blur
-        fading: Apply fading
-        stains: Apply stains
+        image: Normalized grayscale image [0, 1].
+        noise: Apply Gaussian and salt-and-pepper noise.
+        blur: Apply Gaussian blur.
+        fading: Apply fading.
+        stains: Apply stains.
+        bleedthrough: Apply bleed-through.
+        verso_image: Opposite-side image required for bleed-through.
 
     Returns:
-        Degraded image
+        Degraded image.
     """
 
     result = image.copy()
 
+    # 1. Bleed-through
+    if bleedthrough:
+        if verso_image is None:
+            raise ValueError(
+                "verso_image is required for bleed-through."
+            )
+
+        if verso_image.shape != image.shape:
+            raise ValueError(
+                "verso_image and image must have the same dimensions."
+            )
+
+        result = add_bleedthrough(
+            result,
+            verso_image,
+            alpha=bleedthrough_alpha
+        )
+
+    # 2. Blur
     if blur:
         result = add_blur(
             result,
             blur_sigma
         )
 
+    # 3. Fading
     if fading:
         result = add_fading(
             result,
             fading_strength
         )
 
+    # 4. Stains
     if stains:
         result = add_stains(
             result,
             num_stains
         )
 
+    # 5. Noise
     if noise:
         result = add_gaussian_noise(
             result,
@@ -180,3 +208,89 @@ def apply_mixed_degradation(
         )
 
     return np.clip(result, 0, 1)
+
+
+def random_degradation(
+    image,
+    verso_image=None,
+    min_degradations=2,
+    max_degradations=5,
+    rng=None,
+    return_degradations=False
+):
+    """
+    Randomly select and apply 2-5 degradation types.
+
+    Uses apply_mixed_degradation() to apply the selected
+    degradations.
+
+    Parameters:
+        image: Normalized grayscale image [0, 1].
+        verso_image: Opposite-side image for bleed-through.
+        min_degradations: Minimum number of degradations.
+        max_degradations: Maximum number of degradations.
+        rng: Optional NumPy random generator.
+        return_degradations: Also return selected degradation names.
+
+    Returns:
+        Degraded image.
+
+        If return_degradations=True:
+            (degraded_image, selected_degradations)
+    """
+
+    degradations = [
+        "noise",
+        "blur",
+        "fading",
+        "stains"
+    ]
+    
+    if verso_image is not None: degradations.append("bleedthrough")
+
+    # Validate input
+    if not 2 <= min_degradations <= max_degradations <= 5:
+        raise ValueError(
+            "Require 2 <= min_degradations "
+            "<= max_degradations <= 5."
+        )
+
+    if not isinstance(image, np.ndarray) or image.ndim != 2:
+        raise ValueError(
+            "image must be a 2D grayscale NumPy array."
+        )
+
+    # Initialize random generator
+    if rng is None:
+        rng = np.random.default_rng()
+
+    # Randomly select number of degradations
+    num_selected = int(
+        rng.integers(
+            min_degradations,
+            max_degradations + 1
+        )
+    )
+
+    # Randomly select unique degradation types
+    selected = rng.choice(
+        degradations,
+        size=num_selected,
+        replace=False
+    ).tolist()
+
+    # Apply selected degradations
+    degraded_image = apply_mixed_degradation(
+        image=image,
+        noise="noise" in selected,
+        blur="blur" in selected,
+        fading="fading" in selected,
+        stains="stains" in selected,
+        bleedthrough="bleedthrough" in selected,
+        verso_image=verso_image
+    )
+
+    if return_degradations:
+        return degraded_image, selected
+
+    return degraded_image

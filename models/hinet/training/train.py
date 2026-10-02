@@ -19,8 +19,8 @@ SAVE_DIR = ROOT / "models" / "hinet" / "checkpoints"
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
 
 PATCH_SIZE = 128
-BATCH_SIZE = 1
-EPOCHS = 5
+BATCH_SIZE = 4
+EPOCHS = 20
 LEARNING_RATE = 0.0001
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

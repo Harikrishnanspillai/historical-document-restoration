@@ -22,14 +22,6 @@ ENV/
 *.swp
 *.swo
 
-
-
-# =========================
-# Generated outputs
-# =========================
-outputs/
-results/
-
 # =========================
 # SwinIR downloaded model weights
 # =========================

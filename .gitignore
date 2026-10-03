@@ -52,4 +52,3 @@ models/Swin/SwinIR/results/
 Thumbs.db
 
 data/*/test/restored/
-models/restom/Restormer/experiments/
